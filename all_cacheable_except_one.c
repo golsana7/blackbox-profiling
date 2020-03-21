@@ -88,7 +88,7 @@ static void print_mem(struct task_struct *task){
 			printk("\n*(pte+512) : %x \n", *(512 + pte));
 			//changing prot bits of vma
 			printk("\nvm_page_prot before: vma->vm_page_prot: %x", vma->vm_page_prot);
-			/*	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+			vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 			printk("\nvm_page_prot after: vma->vm_page_prot: %x", vma->vm_page_prot);
 			//calculating pfn
 			pfn = pte_pfn(*pte); //with the old pte
@@ -106,7 +106,7 @@ static void print_mem(struct task_struct *task){
 			__flush_tlb_page(vma,vma->vm_start);
 			// pte = pte_offset_map(pmd,vma->vm_start);
 			//printk("\naddress of pte is %p", pte);
-			//printk("\n*pte is %x", *pte);*/
+			//printk("\n*pte is %x", *pte);
 			printk("\nnumber of pages in heap:%ld\n",(vma->vm_end-vma->vm_start)/PAGE_SIZE);
 			//printk("\nstarting address of (heap)  vma->vm_start is 0x%lx", vma->vm_start);
 		}}}
