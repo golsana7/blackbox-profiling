@@ -8,7 +8,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-
+#include <string.h>
 
 #define BUF_SIZE 50*1024
 
@@ -42,10 +42,11 @@ int main() {
 #else
 #warning COMPILE BUFFER ONE
 
-int main(){
+int main (int argc, char* argv[]){
 
-	//allocating buffer
-	char * buf = malloc(BUF_SIZE);
+  
+        //allocating buffer
+        char * buf = malloc(BUF_SIZE);
   
 	//for measuring time using ARM counter (PMU) 
 	//  struct timespec start, finish;     
@@ -54,17 +55,24 @@ int main(){
   
 	int procfd;
 	char buff[10];
+	char *ptr;
+
+	long page_number = strtol(argv[1],&ptr,0);
+	int flag = atoi(argv[1]);
+	//printf("\npage number is: %d",page_number);
+	printf("\nsize argv[2]:%d ",strlen(argv[1]));
+	printf("\nsize of long :%d ",sizeof(long));
 /*	procfd = open("/proc/memprofile", O_RDWR);
 	if(procfd < 0) {
-		printf("Unable to open procfile. Are you root?");
+	printf("Unable to open procfile. Are you root?");
 	}
 	*(long *)buf = 3;
 	write(procfd, buf,  3*sizeof(long));*/
 	
 	//locking the memory
 	//both MCL_CURRENT and MCL_FUTURE mean  current pages are locked and subsequent growth is automatically locked into memory
-	if ( mlockall(MCL_CURRENT|MCL_FUTURE) == -1 )
-	perror("mlockall:3");
+		if ( mlockall(MCL_CURRENT|MCL_FUTURE) == -1 )
+	         perror("mlockall:3");
 
 	/*#if NON_CACHEABLE == 1
 	//#warning COMPILE WITHOUT CACHEABILITY CHANGING
@@ -77,53 +85,55 @@ int main(){
 	//modprobe /media/disk/test/test_pte_print/pte_print.ko
 	printf("Your Module inserted\n");
 	#endif*/
-
+	
 	procfd = open("/proc/memprofile", O_RDWR);
 	if(procfd < 0) {
 		printf("Unable to open procfile. Are you root?");
 	}
+	
+	//for (*(long *)buff = 0; (*(long *)buff)<=45 ; (*(long *)buff)++)
+	*(long *)buff = page_number;
+		//{
+		write(procfd, buff,  sizeof(long));
+	//write(procfd, argv[1], strlen(argv[1]));  
+		//starting time measurment
+		//clock_gettime(CLOCK_REALTIME, &start);
+		time_start = 0;
+		get_timing(time_start);
 
-	for (*(long *)buff = 1; (*(long *)buff)<=45 ; (*(long *)buff)++)
-	//*(long *)buff = 2;
-	  { write(procfd, buff,  sizeof(long));
+		//do real stuff (writing into heap)
+		for(int i=0; i<500; ++i) {
+			for(int c=0; c<BUF_SIZE; c+=32) {
+				if (c%5 == 0)
+				{buf[c] = c;}
+				buf[c] = i;
+			}
+		}
+
   
-	//starting time measurment
-	//clock_gettime(CLOCK_REALTIME, &start);
-	time_start = 0;
-	get_timing(time_start);
-
-	//do real stuff (writing into heap)
-	for(int i=0; i<500; ++i) {
-	for(int c=0; c<BUF_SIZE; c+=32) {
-	if (c%5 == 0)
-	{buf[c] = c;}
-	buf[c] = i;
-	}
-	}
-
-  
-	//ending time mesurment
-	//clock_gettime(CLOCK_REALTIME, &finish);
-	time_end = 0;
-	get_timing(time_end);
+		//ending time mesurment
+		//clock_gettime(CLOCK_REALTIME, &finish);
+		time_end = 0;
+		get_timing(time_end);
   
 
-	//calculating time
-	// long seconds = finish.tv_sec - start.tv_sec;
-	//long ns = finish.tv_nsec - start.tv_nsec;
+		//calculating time
+		// long seconds = finish.tv_sec - start.tv_sec;
+		//long ns = finish.tv_nsec - start.tv_nsec;
 
-	/* if (start.tv_nsec > finish.tv_nsec) {//clock underflow
-	--seconds;
-	ns += 1000000000;
-	}
+		/* if (start.tv_nsec > finish.tv_nsec) {//clock underflow
+		   --seconds;
+		   ns += 1000000000;
+		   }
 
-	printf("\nseconds without ns: %ld\n", seconds);
-	printf("nanoseconds: %ld\n", ns);
-	printf("total seconds: %e\n", (double)seconds + (double)ns/(double)1000000000); 
-	*/
-	printf("\nCycles when page %ld is cacheable are: %lu\n",*(long *)buff,time_end - time_start);
-
-	  }  
+		   printf("\nseconds without ns: %ld\n", seconds);
+		   printf("nanoseconds: %ld\n", ns);
+		   printf("total seconds: %e\n", (double)seconds + (double)ns/(double)1000000000); 
+		*/
+	
+		//printf("\nCycles when page %ld is cacheable are: %lu\n",*(long *)buff,time_end - time_start);
+               printf("\nCycles when page %ld is cacheable are: %lu\n",strtol(argv[1],&ptr,0),time_end - time_start);
+		//}  
 	return 0;
 
 }
