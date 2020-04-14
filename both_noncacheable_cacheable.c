@@ -33,8 +33,8 @@ int p = 0;
 //char *p;
 struct Data
 {
-  struct vma_area_struct  *vmas;
-  unsigned long page_addr;
+	struct vm_area_struct  *vmas;
+	unsigned long page_addr;
   
 };
 
@@ -157,13 +157,15 @@ ssize_t cacheable_proc_write(struct file *file, const char __user *buffer,
 		}
 	}
 
-	return 0;}
+	return 0;
+}
 
 #else
+
 static int print_mem (pte_t *ptep, pgtable_t token ,  unsigned long addr,void *data){
-  //struct vm_area_struct *cvma = ((struct Data *)data)->vmas;
-  //unsigned long page_address = ((struct Data *)data) -> page_addr;
-  struct Data *cdata = data;
+	//struct vm_area_struct *cvma = ((struct Data *)data)->vmas;
+	//unsigned long page_address = ((struct Data *)data) -> page_addr;
+        struct Data *cdata = data;
   
 	pte_t *pte = ptep;
 	size_t pfn;
@@ -171,33 +173,33 @@ static int print_mem (pte_t *ptep, pgtable_t token ,  unsigned long addr,void *d
 	// if (addr == page address) return;
 	if (addr == cdata->page_addr) return 0;
 	else
-	  {
-	print_debug(1,"\nbeginning of the print_mem() with print_debug()",0);
-	print_debug(0,"\ntest of print_debug, address of pte is %p", (unsigned long)pte);
-	print_debug(0,"\n*pte is %x with pte_debug()", *pte);
-	print_debug(0,"\naddress of cacheable pte after adding 512 (HWPTE) with print_debug: %p\n",(unsigned long) (512 + pte));
-	print_debug(0,"\n*(pte+512) with debug_print() : %x \n", *(512 + pte));
-	print_debug(0,"\nwith print_debug() vm_page_prot  before: cvma->vm_page_prot: %x", cdata->vmas->vm_page_prot);
-      	//changing prot bits of vma to make it noncacheable
-	cdata->vmas->vm_page_prot = pgprot_noncached(cvma->vm_page_prot);
-	print_debug(0,"\nvm_page_prot after: cvma->vm_page_prot: %x", cvma->vm_page_prot);
-	//calculating pfn
-	pfn = pte_pfn(*pte); //with the old pte
-	print_debug(0,"\n pfn is: %x",pfn);
-	//making new pte
-	newpte = pfn_pte(pfn, cvma->vm_page_prot);
-	print_debug(0,"\naddress of the newpte is %x", newpte);
-	//setting these changes
-	set_pte_ext(pte, newpte, 0);
-	print_debug(0,"\naddress of pte after set_pte_ext is %p",(unsigned long) pte);
-	print_debug(0,"\n*pte after set_pte_ext is %x", *pte);
-	print_debug(0,"\naddress of pte after set_pte_ext, after adding 512 (HWPTE):  %p \n",(unsigned long) (512 + pte));
-	print_debug(0,"\n*(pte+512) : %x \n", *(512 + pte));
-	//flushing TLB for one page
-	//__flush_tlb_page(cvma,cvma->vm_start);//__flush_tlb_page(cvma,addr);
-	__flush_tlb_page(cvma,addr);
-	return 0;
-	  }
+	{
+		print_debug(1,"\nbeginning of the print_mem() with print_debug()",0);
+		print_debug(0,"\ntest of print_debug, address of pte is %p", (unsigned long)pte);
+		print_debug(0,"\n*pte is %x with pte_debug()", *pte);
+		print_debug(0,"\naddress of cacheable pte after adding 512 (HWPTE) with print_debug: %p\n",(unsigned long) (512 + pte));
+		print_debug(0,"\n*(pte+512) with debug_print() : %x \n", *(512 + pte));
+		print_debug(0,"\nwith print_debug() vm_page_prot  before: cvma->vm_page_prot: %x", cdata->vmas->vm_page_prot);
+		//changing prot bits of vma to make it noncacheable
+		cdata->vmas->vm_page_prot = pgprot_noncached(cdata->vmas->vm_page_prot);
+		print_debug(0,"\nvm_page_prot after: cvma->vm_page_prot: %x", cdata->vmas->vm_page_prot);
+		//calculating pfn
+		pfn = pte_pfn(*pte); //with the old pte
+		print_debug(0,"\n pfn is: %x",pfn);
+		//making new pte
+		newpte = pfn_pte(pfn, cdata->vmas->vm_page_prot);
+		print_debug(0,"\naddress of the newpte is %x", newpte);
+		//setting these changes
+		set_pte_ext(pte, newpte, 0);
+		print_debug(0,"\naddress of pte after set_pte_ext is %p",(unsigned long) pte);
+		print_debug(0,"\n*pte after set_pte_ext is %x", *pte);
+		print_debug(0,"\naddress of pte after set_pte_ext, after adding 512 (HWPTE):  %p \n",(unsigned long) (512 + pte));
+		print_debug(0,"\n*(pte+512) : %x \n", *(512 + pte));
+		//flushing TLB for one page
+		//__flush_tlb_page(cvma,cvma->vm_start);//__flush_tlb_page(cvma,addr);
+		__flush_tlb_page(cdata->vmas,addr);
+		return 0;
+	}
 }
 //}
     
@@ -221,7 +223,7 @@ ssize_t memprofile_proc_write(struct file *file, const char __user *buffer,
 		struct task_struct *task;
 		struct mm_struct *mm;
 		//struct vm_area_struct *data;
-		struct Data *data;
+		struct Data *data = kmalloc (sizeof(struct Data), GFP_KERNEL);
 		//struct vma_srea_struct data = vma;
 		char task_name [TASK_COMM_LEN];
 
@@ -235,37 +237,17 @@ ssize_t memprofile_proc_write(struct file *file, const char __user *buffer,
 				printk("\nThis mm_struct has %d vmas.\n", mm->map_count);
 				data->vmas = mm->mmap;
 				print_debug (0,"\ndata->vm_page_prot: %x\n", data->vmas->vm_page_prot);
-				for (data->vmas = mm->mmap ; data->vmas ; data->vmas = data->vmas->vm_next){
-					if (data->vmas->vm_start <= mm->brk && data->vmas->vm_end >= mm->start_brk){
+				for (data->vmas = mm->mmap ; data->vmas ; data->vmas = data->vmas->vm_next)
+				{
+					if (data->vmas->vm_start <= mm->brk && data->vmas->vm_end >= mm->start_brk)
+					{
 						print_debug(1,"\n[heap]",0);
 						data->page_addr = data->vmas->vm_start+p*PAGE_SIZE;
 						print_debug(1,"\nnumber of pages in heap:%ld\n",(data->vmas->vm_end-data->vmas->vm_start)/PAGE_SIZE);
 						//print_debug (0,"\ndata->vm_page_prot: %x\n", data->vm_page_prot);
 						apply_to_page_range(data->vmas->vm_mm, data->vmas->vm_start, data->vmas->vm_end - data->vmas->vm_start,print_mem, data);  
-						/*	if (p==0) {
-							apply_to_page_range(data->vm_mm, data->vm_start, data->vm_end - data->vm_start,print_mem, data);
-						}
-						else if (p == 1) //first page of the heap
-						{
-							print_debug(0,"\np is one\n",0);
-							apply_to_page_range(data->vm_mm, data->vm_start+PAGE_SIZE,data->vm_end - (data->vm_start+p* PAGE_SIZE),print_mem, data);
-						}
-						else if (p == (data->vm_end-data->vm_start)/PAGE_SIZE) //last page of the heap
-						{
-							print_debug(0,"\np is 45\n",0);
-							apply_to_page_range(data->vm_mm, data->vm_start, (p-1)*PAGE_SIZE , print_mem, data);}
-						else{
-							apply_to_page_range(data->vm_mm, data->vm_start, (p-1)*PAGE_SIZE,print_mem, data);
-							print_debug(0,"\nstart of the heap (data->vm_start) is: %ld", data->vm_start);
-							print_debug(0,"\n(data->vm_start+(p-1)*PAGE_SIZE) is: %ld", (data->vm_start+(p-1)*PAGE_SIZE));
-     							print_debug(1,"\nnumber of pages in this range is: %ld\n ", ((data->vm_start+(p-1)*PAGE_SIZE) - data->vm_start)/PAGE_SIZE);
-							apply_to_page_range(data->vm_mm, data->vm_start+p*PAGE_SIZE, data->vm_end - (data->vm_start+p*PAGE_SIZE),print_mem, data);
-							print_debug(1,"\nnumber of pages in the second  range is: %ld\n ", (data->vm_end - (data->vm_start+p*PAGE_SIZE))/PAGE_SIZE);
-							printk("test");
-							printk("\nnumber of pages in the second  range is: %ld\n ", (data->vm_end - (data->vm_start+p*PAGE_SIZE))/PAGE_SIZE);
+				    
 
-							}*/
-						//print_debug(1,"\nnumber of pages in the second  range is: %ld\n ", (data->vm_end - (data->vm_start+p*PAGE_SIZE))/PAGE_SIZE);
 					}
 				}
 			}
