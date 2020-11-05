@@ -28,6 +28,8 @@
 #include <sys/stat.h>
 #include <libelf.h>
 #include <gelf.h>
+#include <sched.h>
+#include <errno.h>
 
 /* Addresses of jumps will have a 1 in LSB to indicate that the CPU
    will jump to ARM code (as opposed to Thumb code). This mask is used
@@ -52,6 +54,15 @@
 	} while(0)
 
 
+#define HELP_STRING					\
+	"==== BU Black-box Cache Profiler ====\n"	\
+	"Written by: Golsana Ghaemi\n"			\
+	"            Renato Mancuso\n"			\
+	"\n"						\
+	"USAGE: %s [-h] -m <mode> -n <samples>\n"	\
+	"       -c <cacheable> -s <symbol>\n"		\
+	"\n"
+
 
 /* The assembly opcode to use when inserting a breakpoint */
 //#define BRKPOINT_INSTR (0xe7f001f0UL)
@@ -64,7 +75,8 @@
 #define PAGE_SIZE 4096
 #define max_vma_mappedfile 33
 #define PARENT_CPU 2 //for ser_realtime
-
+#define CHILD_CPU 2 //for ser_realtime
+#define STAGES 2
 
 /* Structure of parameters that will be passed to the kernel */ 
 struct params
@@ -79,8 +91,8 @@ struct trace_params
 {
 	char * symbol;
 	pid_t pid;
-	long brkpnt_data;	
-	void * brkpnt_addr;
+	long brkpnt_data [STAGES];
+	void * brkpnt_addr [STAGES];
 	unsigned long t_start;
 	unsigned long t_end;
 };
@@ -120,9 +132,9 @@ struct page_stats{
 /* Enum to keep track of the current stage in the execution of the
  * tracee */
 enum tracee_stage {
-	TRACEE_INIT = 0,
-	TRACEE_ENTRY,
-	TRACEE_EXIT
+	TRACEE_ENTRY = 0,
+	TRACEE_EXIT,
+	TRACEE_INIT,
 };
 
 /* for measuring time */
@@ -133,7 +145,7 @@ enum tracee_stage {
 	} while (0)
 
 /* ===== GLOBAL VARIABLES ===== */
-int done = 0;
+volatile int done = 0;
 struct trace_params tparams;
 struct params kernel_params;
 static int  heap_size = 0;
@@ -145,7 +157,7 @@ struct page_stats *page; // can I pass it to compare func of qsort in order not 
 
 
 /* Set real-time SCHED_FIFO scheduler with given priority */
-void set_realtime(int prio)
+void set_realtime(int prio, int cpu)
 {
   struct sched_param sp;
 
@@ -367,7 +379,10 @@ pid_t run_debuggee(char * program_name, char * arguments [])
 	 * successful fork */
 	if(child_pid == 0)
 	{
-	        set_realtime(1);
+	        set_realtime(2, CHILD_CPU);
+
+		setenv("MALLOC_TOP_PAD_", "1000000", 1);
+		
 	       /*Allow tracing of this process*/
 		if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0)
 		{
@@ -375,6 +390,15 @@ pid_t run_debuggee(char * program_name, char * arguments [])
 			DBG_PERROR(NULL);
 			exit(EXIT_FAILURE);			
 		}
+
+		int cpu;
+		if ((cpu = sched_getcpu()) < 0)
+		{
+			DBG_PRINT("Unable to detect the current CPU");
+			DBG_PERROR(NULL);
+			exit(EXIT_FAILURE);			
+		}
+		DBG_PRINT("Executing tracee on CPU %d\n", cpu);
 		
 		/* Replace this process's image with the given program image
 		   will load a new binary image into memory and start
@@ -506,9 +530,9 @@ void handle_trace_event(pid_t pid, int wstat)
 		 * call. */
 	case TRACEE_INIT:
 		DBG_PRINT("Process spawned. Setting breakpoint at %s (%p)\n",
-			  tparams.symbol, tparams.brkpnt_addr);
+			  tparams.symbol, tparams.brkpnt_addr[stage]);
 		
-		tparams.brkpnt_data =  set_breakpoint(pid, tparams.brkpnt_addr);
+		tparams.brkpnt_data[TRACEE_ENTRY] =  set_breakpoint(pid, tparams.brkpnt_addr[TRACEE_ENTRY]);// ENTRY means entry of the function we are gonna set bp at
 		//heap can't be scanned here since at this point there's no heap
 		//if(!heap_size)
 		//read_proc_maps_file(pid);//here size of heap should be set
@@ -525,6 +549,7 @@ void handle_trace_event(pid_t pid, int wstat)
 		 * of the timed function. */		
 	case TRACEE_ENTRY:		
 		DBG_PRINT("Process reached breakpoint at %s\n", tparams.symbol);
+		
 	        if (!heap_size) /*has heap already been scanned?*/
 			read_proc_maps_file(pid); /*if no (heap_size = 0) scan it*/
 		DBG_PRINT("heap_size after hitting the first bp is:%d\n",heap_size);
@@ -535,28 +560,28 @@ void handle_trace_event(pid_t pid, int wstat)
 		if(procfd < 0) {
 			DBG_PRINT("Unable to open procfile. Are you root?");
 		}
-		//write(procfd, &kernel_params, 1* sizeof(struct params));
+		write(procfd, &kernel_params, 1* sizeof(struct params));
 		//DBG_PRINT("done with interacting with kernel\n");
 		
 		/* Restore the original value at the breakpoint so
 		 * that the process can continue */
-		if(ptrace(PTRACE_POKETEXT, pid, tparams.brkpnt_addr, tparams.brkpnt_data) < 0) {
+		if(ptrace(PTRACE_POKETEXT, pid, tparams.brkpnt_addr[stage], tparams.brkpnt_data[stage]) < 0) {
 			DBG_PRINT("Unable to resume from breakpoint. Exiting.");
 			exit(EXIT_FAILURE);			
 		}	       
 		/* Rewind the PC of the tracee to before the
 		 * breakpoint */
-		if(set_PC(pid, tparams.brkpnt_addr) < 0) {
+		if(set_PC(pid, tparams.brkpnt_addr[stage]) < 0) {
 			exit(EXIT_FAILURE);
 		}
 
 		/* Now read return address to set a breakpoint at the
 		 * return from the observed function. TODO handle
 		 * possible error. */
-		tparams.brkpnt_addr = (void *)(get_LR(pid) & ARM_ISA_MASK);
-		tparams.brkpnt_data = set_breakpoint(pid, tparams.brkpnt_addr);
+		tparams.brkpnt_addr[stage+1] = (void *)(get_LR(pid) & ARM_ISA_MASK);
+		tparams.brkpnt_data[stage+1] = set_breakpoint(pid, tparams.brkpnt_addr[stage+1]);
 
-		DBG_PRINT("Traced function set to return to %p\n", tparams.brkpnt_addr);
+		DBG_PRINT("Traced function set to return to %p\n", tparams.brkpnt_addr[stage+1]);
 
 		/* Ready to resume tracee, but not before acquiring the timing */
 		get_timing(tparams.t_start);
@@ -580,14 +605,14 @@ void handle_trace_event(pid_t pid, int wstat)
 		
 		/* Restore the original value at the breakpoint so
 		 * that the process can continue */
-		if(ptrace(PTRACE_POKETEXT, pid, tparams.brkpnt_addr, tparams.brkpnt_data) < 0) {
+		if(ptrace(PTRACE_POKETEXT, pid, tparams.brkpnt_addr[stage], tparams.brkpnt_data[stage]) < 0) {
 			DBG_PRINT("Unable to resume from breakpoint. Exiting.");
 			exit(EXIT_FAILURE);			
 		}
 			       
 		/* Rewind the PC of the tracee to before the
 		 * breakpoint */
-		if(set_PC(pid, tparams.brkpnt_addr) < 0) {
+		if(set_PC(pid, tparams.brkpnt_addr[stage]) < 0) {
 			exit(EXIT_FAILURE);
 		}
 
@@ -608,15 +633,18 @@ void child_exit_handler (int signo, siginfo_t * info, void * extra)
 
 	(void)info;
 	(void)extra;
-       
+
+	DBG_PRINT("Handler called with SIGNAL %d\n", signo);
+	
 	for (;;) {
 		pid = waitpid (-1, &wstat, WNOHANG);
 		if (pid == 0) {
 			/* No change in the state of the child(ren) */
 			return;		
-		} else if (pid == -1) {
-			/* Something went wrong */			
-			DBG_PERROR("Waitpid() exited with error");
+		} else if (pid == -1 && errno != ECHILD) {
+			/* Something went wrong */
+			DBG_PRINT("errno is %d\n", errno);
+			DBG_PERROR("Waitpid() exited with error %d");
 			exit(EXIT_FAILURE);
 			return;
 		} else if (WIFSTOPPED(wstat)) { //for times, child is stopped
@@ -638,7 +666,9 @@ void handle_tracee_signals(void)
 {
 	sigset_t waitmask;
 	struct sigaction chld_sa, trap_sa;
-       
+
+	DBG_PRINT("Installing child signal handlers.\n");
+	
 	/* Use RT POSIX extension */
 	chld_sa.sa_flags = SA_SIGINFO;
 	chld_sa.sa_sigaction = child_exit_handler;
@@ -655,6 +685,8 @@ void handle_tracee_signals(void)
 	}
  
 	done = 0;
+	DBG_PRINT("DONE with child signal handlers.\n");
+
 }
 
 int main(int argc, char* argv[])
@@ -675,27 +707,13 @@ int main(int argc, char* argv[])
 	 * end of the command line after all the optional
 	 * arguments. */
 	//while((opt = getopt(argc, argv, ":s:e:p:n:c:")) != -1) {
-	while((opt = getopt(argc, argv, ":s:e:c:n:m:")) != -1) {
+	while((opt = getopt(argc, argv, ":s:e:c:n:m:h")) != -1) {
 		switch (opt) {
-			/*case 'p':
-			  page_numbers = optarg;
-			  //  DBG_PRINT("Got parameter -p [%s]\n", page_numbers);
-			  break;
-			  case 'n': /*number of pages*/
-			/*    kernel_params.size = strtol(optarg, NULL, 0);
-			      break;*/
-			//printf("parameter -n is: %d\n", kernel_params.size);
-			//DBG_PRINT("parameter -n is  %d\n", kernel_params.size);
-		case 'm': //this doesnt work rn
-			mode = optarg; //either profiling or running
-			if(strcmp("profile",optarg) == 0)
-			{kernel_params.size = 1;
-				printf("mode is :%s and size is:%d\n",mode,kernel_params.size);}
-			else if (strcmp("run",optarg) == 0)
-				kernel_params.size = 10;
-			else
-				printf("wrong mode input\n");
-		case 'n': //number of samples
+	 case 'h':
+			DBG_PRINT(HELP_STRING, argv[0]);
+			return EXIT_SUCCESS;
+			break;
+	       	case 'n': //number of samples
 			sample_size = strtol(optarg, NULL, 0);
 			break;
 		case 'c': //cacheabe : c = 1, noncacheable : c = 0
@@ -711,7 +729,8 @@ int main(int argc, char* argv[])
 			//DBG_PRINT("Parameter -e value: 0x%08lx\n", e_value);
 			break;
 		case '?':
-			//DBG_PRINT("Invalid parameter. Exiting.\n");
+			DBG_PRINT("Invalid parameter detected. Exiting.\n");
+			DBG_PRINT(HELP_STRING, argv[0]);
 			return EXIT_FAILURE;
 		}		
 	}
@@ -767,9 +786,9 @@ int main(int argc, char* argv[])
 	/* We are ready to start the tracee. But let's try to resolve
 	 * the symbol to observe right away. If we can't resolve the
 	 * target symbol, there is no point in running the tracee. */
-	tparams.brkpnt_addr = resolve_symbol(argv[tracee_cmd_idx], tparams.symbol);
+	tparams.brkpnt_addr[TRACEE_ENTRY] = resolve_symbol(argv[tracee_cmd_idx], tparams.symbol);
         
-	if (tparams.brkpnt_addr == (void *)-1) {
+	if (tparams.brkpnt_addr[TRACEE_ENTRY] == (void *)-1) {
 		return EXIT_FAILURE;
 	}
 	//if (strcmp(mode,"profile") == 0){
@@ -786,7 +805,7 @@ and also get the mode (profiling or running) from user I think*/
 	kernel_params.size = 1; //profiling mode
 	kernel_params.buff = malloc(kernel_params.size*sizeof(long));//if is profiling mode, size is one   
 
-        set_realtime(1); // for parent
+        set_realtime(1, PARENT_CPU); // for parent
 
 
 	do
