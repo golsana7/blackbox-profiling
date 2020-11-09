@@ -11,6 +11,7 @@
  **********************************************************************/
 
 #define _GNU_SOURCE 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -159,30 +160,30 @@ struct page_stats *page; // can I pass it to compare func of qsort in order not 
 /* Set real-time SCHED_FIFO scheduler with given priority */
 void set_realtime(int prio, int cpu)
 {
-  struct sched_param sp;
+	struct sched_param sp;
 
-  /* Initialize parameters */
-  memset(&sp, 0, sizeof(struct sched_param));
-  sp.sched_priority = prio;
+	/* Initialize parameters */
+	memset(&sp, 0, sizeof(struct sched_param));
+	sp.sched_priority = prio;
 
-  /* Attempt to set the scheduler for current process */
-  if (sched_setscheduler(0, SCHED_FIFO, &sp) < 0) {
-    perror("Unable to set SCHED_FIFO scheduler");
-    exit(EXIT_FAILURE);
-  }
+	/* Attempt to set the scheduler for current process */
+	if (sched_setscheduler(0, SCHED_FIFO, &sp) < 0) {
+		perror("Unable to set SCHED_FIFO scheduler");
+		exit(EXIT_FAILURE);
+	}
 
-  /* Set CPU affinity if isolate flag specified */
+	/* Set CPU affinity if isolate flag specified */
  
-    cpu_set_t set;
-    CPU_ZERO(&set);
+	cpu_set_t set;
+	CPU_ZERO(&set);
 
-    /* default to CPU x for parent */
-    CPU_SET(PARENT_CPU, &set);
+	/* default to CPU x for parent */
+	CPU_SET(PARENT_CPU, &set);
 
-    if (sched_setaffinity(getpid(), sizeof(set), &set) == -1) {
-      perror("Unable to set CPU affinity.");
-      exit(EXIT_FAILURE);
-    }
+	if (sched_setaffinity(getpid(), sizeof(set), &set) == -1) {
+		perror("Unable to set CPU affinity.");
+		exit(EXIT_FAILURE);
+	}
 
   
 }
@@ -261,6 +262,7 @@ scan_proc_maps_line(int chunk_id, char const *buf, char const *defname)
 		/*we are here, mean this vma (this line of maps file) is heap. so vma->start means
 		  start of heap and vma->end means end of heap. since vma->len is size_t and page_size is decima, I used end-start which are decimal*/            //printf("inside heap\n");
 		heap_size = (vma->end - vma->start)/PAGE_SIZE;
+		//heap_size = 10;
 		
 	}
 
@@ -383,7 +385,7 @@ pid_t run_debuggee(char * program_name, char * arguments [])
 
 		setenv("MALLOC_TOP_PAD_", "1000000", 1);
 		
-	       /*Allow tracing of this process*/
+		/*Allow tracing of this process*/
 		if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0)
 		{
 			DBG_PRINT("Unable to initate tracing on program %s", program_name);
@@ -530,7 +532,7 @@ void handle_trace_event(pid_t pid, int wstat)
 		 * call. */
 	case TRACEE_INIT:
 		DBG_PRINT("Process spawned. Setting breakpoint at %s (%p)\n",
-			  tparams.symbol, tparams.brkpnt_addr[stage]);
+			  tparams.symbol, tparams.brkpnt_addr[TRACEE_ENTRY]);
 		
 		tparams.brkpnt_data[TRACEE_ENTRY] =  set_breakpoint(pid, tparams.brkpnt_addr[TRACEE_ENTRY]);// ENTRY means entry of the function we are gonna set bp at
 		//heap can't be scanned here since at this point there's no heap
@@ -599,7 +601,7 @@ void handle_trace_event(pid_t pid, int wstat)
 		DBG_PRINT("TIMING: function [%s] took %ld CPU cycles\n",
 			  tparams.symbol, tparams.t_end - tparams.t_start);
 		if(tparams.t_start > tparams.t_end)
-		  printf("OVERFLOW: %lu\n",(0xFFFFFFFFUL-tparams.t_start)+tparams.t_end); 
+			printf("OVERFLOW: %lu\n",(0xFFFFFFFFUL-tparams.t_start)+tparams.t_end); 
 		samples += (tparams.t_end - tparams.t_start);
 		//printf("%lu,%ld\n",kernel_params.buff[kernel_params.size - 1], tparams.t_end - tparams.t_start);
 		
@@ -685,7 +687,7 @@ void handle_tracee_signals(void)
 	}
  
 	done = 0;
-	DBG_PRINT("DONE with child signal handlers.\n");
+	//DBG_PRINT("DONE with child signal handlers.\n");
 
 }
 
@@ -695,9 +697,54 @@ int main(int argc, char* argv[])
 	long e_value = -1;
 	//char *page_numbers;
 	char* mode;
+	//int output[];
 	//struct page_stats *page; // I cant malloc here, i dont have heap size
-       
+	FILE* fptr = fopen("output.csv","w");
+	if (fptr == NULL)
+	  return -1;
+        /*FILE* fprof = fopen("profiling.csv","w");
+	if(fprof == NULL)
+	return -1;*/
 	//kernel_params.buff = malloc(kernel.size*sizeof(long));
+	while((opt = getopt(argc, argv, ":s:e:c:n:m:h:o")) != -1) {
+		switch (opt) {
+		case 'h':
+			DBG_PRINT(HELP_STRING, argv[0]);
+			return EXIT_SUCCESS;
+			break;
+		case 'm': //this doesnt work rn
+			mode = optarg; //either profiling or running
+			if(strcmp("profile",optarg) == 0)
+			{kernel_params.size = 1;
+				printf("mode is :%s and size is:%d\n",mode,kernel_params.size);}
+			else if (strcmp("run",optarg) == 0)
+				kernel_params.size = 10;
+			else
+				printf("wrong mode input\n");
+			break;
+		case 'n': //number of samples
+			sample_size = strtol(optarg, NULL, 0);
+			break;
+		case 'c': //cacheabe : c = 1, noncacheable : c = 0
+			kernel_params.shouldSkip = strtol(optarg, NULL, 0);
+			printf("shouldSkip is : %d\n",kernel_params.shouldSkip);
+			break;
+		case 's': //symbol which we are gonna put breakpoint on
+			tparams.symbol = optarg;
+			DBG_PRINT("Timing function %s\n", tparams.symbol);
+			break;
+			//case 'o':
+		        
+		case 'e':
+			e_value = strtol(optarg, NULL, 0);
+			//DBG_PRINT("Parameter -e value: 0x%08lx\n", e_value);
+			break;
+		case '?':
+			//DBG_PRINT("Invalid parameter. Exiting.\n");
+			return EXIT_FAILURE;
+		}
+	}
+
 	
 	/* Parse command line parameters. Just as an example, this
 	 * program accepts a parameter -e <value> and if specified it
@@ -706,34 +753,6 @@ int main(int argc, char* argv[])
 	 * the executable to run and its parameters is expected at the
 	 * end of the command line after all the optional
 	 * arguments. */
-	//while((opt = getopt(argc, argv, ":s:e:p:n:c:")) != -1) {
-	while((opt = getopt(argc, argv, ":s:e:c:n:m:h")) != -1) {
-		switch (opt) {
-	 case 'h':
-			DBG_PRINT(HELP_STRING, argv[0]);
-			return EXIT_SUCCESS;
-			break;
-	       	case 'n': //number of samples
-			sample_size = strtol(optarg, NULL, 0);
-			break;
-		case 'c': //cacheabe : c = 1, noncacheable : c = 0
-		        kernel_params.shouldSkip = strtol(optarg, NULL, 0);
-			printf("shouldSkip is : %d\n",kernel_params.shouldSkip);
-			break;
-		case 's': //symbol which we are gonna put breakpoint on 
-			tparams.symbol = optarg;
-			DBG_PRINT("Timing function %s\n", tparams.symbol);
-			break;
-		case 'e':
-			e_value = strtol(optarg, NULL, 0);
-			//DBG_PRINT("Parameter -e value: 0x%08lx\n", e_value);
-			break;
-		case '?':
-			DBG_PRINT("Invalid parameter detected. Exiting.\n");
-			DBG_PRINT(HELP_STRING, argv[0]);
-			return EXIT_FAILURE;
-		}		
-	}
 
 
 	/*filling page numbers which should be sent to kernel*/
@@ -842,6 +861,8 @@ and also get the mode (profiling or running) from user I think*/
 	}
 	while(count < heap_size);
 
+       
+
 
 
 	/******************************* SECOND MODE **************************************/
@@ -852,37 +873,62 @@ and also get the mode (profiling or running) from user I think*/
 
 	qsort(page,heap_size,sizeof(struct page_stats),cmpfunc); //page is sorted array after this, increasingly based on cycles
 	// for cacheable mode we want max cycles (end of array, max cycles) and vice versa for noncacheable mode
-	for (int i = 0; i < heap_size; i++)
+	for (int i = 0; i < heap_size; i++){
 		printf("cycle: %d and page number: %d\n", page[i].cycles, page[i].page_number);
-	// }
-	//break;
+	        //fprintf(fprof,"%d,%d\n",page[i].page_number, page[i].cycles);
+	}
 
-	//case 1: running mode, timing for multiple pages
-	free(kernel_params.buff);
-	kernel_params.size = 2; //just for test, this part is not complete
-	kernel_params.buff = malloc(2*sizeof(long));
-
-	//this parts for now just makes sense for nonc mode.when all other problems are fixed I will complete the design of this part
-	for(int i = 0; i <  kernel_params.size; i++)
-	{
-		kernel_params.buff[i] = page[i].page_number;//read this from output of profiling mode
+	//fclose(fprof);
+	
+        int output[heap_size];
+	free(kernel_params.buff); //probably should change its place
+	kernel_params.shouldSkip = 0; //bc we want to have all pages noncacheable except those in profiling info
+	for (int i = 1; i <= heap_size; i++)
+	  {
+	    samples = 0;
+	    sample_size = 1; //for now
+	    
+	    kernel_params.size = i;
+	    kernel_params.buff = malloc(kernel_params.size*sizeof(long));
+	    
+	    //this parts for now just makes sense for nonc mode.when all other problems are fixed I will complete the design of this part
+	        for(int j = 0; j <  i; j++)
+	      {
+		kernel_params.buff[j] = page[j].page_number;//read this from output of profiling mode
 		//this way works if c = 0 (non-c)
 		//for cacheable (c=1) kernel_params.buff[i] = page[heap_size-1-i].page_number
-		printf("kernel_params.buff[%d] = %lu\n", i, kernel_params.buff[i]);
-	}
-	//The symbol was resolved correctly. Let's run the process                                                                                   
-	//run benchmark with multiple pages and getting one timing
-	tparams.pid = run_debuggee(argv[tracee_cmd_idx], &argv[tracee_cmd_idx]);
+		//printf("kernel_params.buff[%d] = %lu\n", i, kernel_params.buff[i]);
+	      }
 
-	if (tparams.pid == 0) {
+		for (int i = 0; i < i; i++)
+		  {
+		    DBG_PRINT("kernel_parames.buff[%d] : %lu\n", i, kernel_params.buff[i]);
+		  }
+	     //The symbol was resolved correctly. Let's run the process                                                                                   
+	     //run benchmark with multiple pages and getting one timing
+	     tparams.pid = run_debuggee(argv[tracee_cmd_idx], &argv[tracee_cmd_idx]);
+
+	     if (tparams.pid == 0) {
 		return EXIT_FAILURE;
-	}
+	      }
+	   
+	     //The tracee has been started and it is being traced. Now                                                                                    
+	     //install handler for signals coming from the child. 
+	     handle_tracee_signals();
 
-	//The tracee has been started and it is being traced. Now                                                                                    
-	//install handler for signals coming from the child. 
-	handle_tracee_signals();
-	//    break;
-	//}
-	
+	     //outputting
+	     //DBG_PRINT("number of pages are cacheable: %d, cycles: %d\n", i, samples/sample_size);
+	     output[i] = samples/sample_size;
+	     fprintf(fptr,"%d,%d\n",i,output[i]);
+	     free(kernel_params.buff);
+	   
+	    
+	     }
+	fclose(fptr);
+	/*for (int i = 1; i <= heap_size; i++)
+	  {
+	    DBG_PRINT("%d , %d\n",i, output[i]);
+	    }*/
 	return EXIT_SUCCESS;
-}
+	  }	
+
