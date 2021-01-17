@@ -54,7 +54,7 @@ struct vmas_params
   int page_size;  //size of each of above vmas 
 };
 
-static void (*flush_tlb_page_m) (struct vm_area_struct *vma, unsigned long uaddr) = NULL;
+//static void (*flush_tlb_page_m) (struct vm_area_struct *vma, unsigned long uaddr) = NULL;
 
 /*interacting between user and kernel for sending page index:
   we store number of pages in "size" field and page indices in buff field  of "params" struct
@@ -351,9 +351,9 @@ static int cacheability_modifier (pte_t *ptep, pgtable_t token ,  unsigned long 
 		//flushing TLB for one page
 		// each time addr is added by 4KB
 		printk("cacheability_modifier on cpu: %d\n",smp_processor_id());
-		flush_tlb_page_m(((struct Data*)data)->vmas,addr);
+		//flush_tlb_page_m(((struct Data*)data)->vmas,addr);
 		//		on_each_cpu(middle_func, &ta, 1);
-		//__flush_tlb_page(((struct Data*)data)->vmas,addr);
+		__flush_tlb_page(((struct Data*)data)->vmas,addr);
 		//flush_tlb_page_mod(((struct Data*)data)->vmas,addr);
 		
 	}
@@ -383,7 +383,7 @@ void vma_finder (struct mm_struct *mm, struct Data *data, struct task_struct *ta
 				int j;
 				for (j=0; j < cp.size[PAGE_LIST]; j++)//making adresses we want to skip
 				{
-					data->page_addr[PAGE_LIST] = data->vmas->vm_start+((cp.page_addr[j]-1)*PAGE_SIZE);
+				  data->page_addr[/*PAGE_LIST*/j] = data->vmas->vm_start+((cp.page_addr[j]-1)*PAGE_SIZE);
 					//printk(" start : %x , data->page_addr[%d] : %x\n", data->vmas->vm_start,j,data->page_addr[j]);
 				}
 				apply_to_page_range(data->vmas->vm_mm, data->vmas->vm_start, data->vmas->vm_end - data->vmas->vm_start,cacheability_modifier,data);
@@ -508,22 +508,21 @@ static int mm_exp_load(void){
 	}
 
 
-	/* Resolve the rmap_walk_func required to resolve physical
-	 * address to virtual addresses */
-	if (!flush_tlb_page_m) {
-	  /* Attempt to find symbol */
+	/* Resolve the flush_tlb_page required to flush tlb */
+	/*	if (!flush_tlb_page_m) {
+	  //Attempt to find symbol 
 	  preempt_disable();
 	  mutex_lock(&module_mutex);
 	  flush_tlb_page_m = (void*) kallsyms_lookup_name("flush_tlb_page");
 	  mutex_unlock(&module_mutex);
 	  preempt_enable();
 
-	  /* Have we found a valid symbol? */
+	  // Have we found a valid symbol? 
 	  if (!flush_tlb_page_m) {
 	    pr_err("Unable to find flush_tlb_page symbol. Aborting.\n");
 	    return -ENOSYS;
 	  }
-	}
+	  }*/
 
 	/* Initialize file operations */
 	memprof_ops.write = memprofile_proc_write;
