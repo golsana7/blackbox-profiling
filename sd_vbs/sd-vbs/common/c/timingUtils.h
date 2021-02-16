@@ -1,4 +1,4 @@
-#define __ARCH ARM
+/*#define __ARCH ARM
 
 
 #ifdef GCC
@@ -143,5 +143,49 @@
 //    raw_magic_timing_report_print();
 //    return;
 //}
+
+#endif
+*/
+#ifdef __aarch64__
+
+#define magic_timing_begin(cycleLo, cycleHi) {	\
+    cycleHi = 0;\
+    asm volatile("mrs %0, cntvct_el0" : "=r"(cycleLo) );\
+  }\
+
+#define magic_timing_end(cycleLo, cycleHi) {	\
+      unsigned tempCycleLo, tempCycleHi = 0;\
+      asm volatile("mrs %0, cntvct_el0" : "=r"(tempCycleLo) );\
+      cycleLo = tempCycleLo - cycleLo;\
+      cycleHi = tempCycleHi - cycleHi;\
+    }\
+
+#elif defined(__arm__)
+#define magic_timing_begin(cycleLo, cycleHi) {\
+    cycleHi = 0;\
+    asm volatile("mrc p15, 0, %0, c9, c13, 0" : "=r"(cycleLo) );\
+  }\
+    #define magic_timing_end(cycleLo, cycleHi) {\
+      unsigned tempCycleLo, tempCycleHi = 0;\
+      asm volatile("mrc p15, 0, %0, c9, c13, 0" : "=r"(tempCycleLo) );\
+      cycleLo = tempCycleLo-cycleLo;\
+      cycleHi = tempCycleHi - cycleHi;\
+    }\
+
+#else
+
+#define magic_timing_begin(cycleLo, cycleHi) {		    \
+    asm volatile( "rdtsc": "=a" (cycleLo), "=d" (cycleHi)); \
+  }\
+    #define magic_timing_end(cycleLo, cycleHi) {\
+      unsigned tempCycleLo, tempCycleHi; \
+      asm volatile( "rdtsc": "=a" (tempCycleLo), "=d" (tempCycleHi)); \
+      cycleLo = tempCycleLo-cycleLo;\
+      cycleHi = tempCycleHi - cycleHi;\
+    }\
+
+#define magic_timing_report(cycleLo, cycleHi) {		  \
+      printf("Timing report: %d %d\n", cycleLo, cycleHi); \
+    }\
 
 #endif
