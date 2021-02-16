@@ -30,6 +30,14 @@ void normalizeImage(F2D* image)
         asubsref(image,i) = ( asubsref(image,i) / (tempMax+0.0) );
 }
 
+void symbol_sift(F2D *image,F2D** frames_ptr)
+{
+    /** Normalize the input image to lie between 0-1 **/
+    normalizeImage(image);
+    /** Extract sift features for the normalized image **/
+    *frames_ptr = sift(image);
+}
+
 int main(int argc, char* argv[])
 {
     I2D* im;
@@ -55,10 +63,11 @@ int main(int argc, char* argv[])
     cols = image->width;
 
     startTime = photonStartTiming();
+    symbol_sift(image, &frames);
     /** Normalize the input image to lie between 0-1 **/
-	normalizeImage(image);
+    //	normalizeImage(image);
     /** Extract sift features for the normalized image **/
-    frames = sift(image);
+    //frames = sift(image);
     endTime = photonEndTiming();
 
     printf("Input size\t\t- (%dx%d)\n", rows, cols);
