@@ -6,8 +6,9 @@ Author: Sravanthi Kota Venkata
 #include <stdlib.h>
 #include "localization.h"
 
-void symbol_localization(int n, F2D *eul1,F2D *eul2,F2D* quat,I2D* isEOF,F2D *STDDEV_GPSPos,F2D *randW,I2D* index,F2D* fid,I2D* sType, F2D* gyro,F2D *ones,float M_STDDEV_GYRO,F2D* norm_gyro,F2D* angleAlpha,float gyroTimeInterval, F2D *quatDelta, F2D *sData, F2D *pos,F2D *temp_STDDEV_GPSPos,F2D* vel,F2D *qConj,F2D* orgWorld, float STDDEV_GPSVel, float STDDEV_ODOVel,F2D* accl, float M_STDDEV_POS, float acclTimeInterval, float pi,int rows,int cols,int icount,F2D* w,F2D* gtemp, F2D* gravity, float STDDEV_ACCL,float M_STDDEV_VEL, F2D* resultMat,int i,F2D *Opos,unsigned int* start,unsigned int *endC,unsigned int *elapsed,unsigned int *elt)
+void symbol_localization(int n, F2D *eul1,F2D *eul2,F2D* quat,I2D* isEOF,F2D *STDDEV_GPSPos,F2D *randW,I2D* index,F2D* fid,I2D* sType, F2D* gyro,F2D *ones,float M_STDDEV_GYRO,F2D* norm_gyro,F2D* angleAlpha,float gyroTimeInterval, F2D *quatDelta, F2D *sData, F2D *pos,F2D *temp_STDDEV_GPSPos,F2D* vel,F2D *qConj,F2D* orgWorld, float STDDEV_GPSVel, float STDDEV_ODOVel,F2D* accl, float M_STDDEV_POS, float acclTimeInterval, float pi,int icount,F2D* w,F2D* gtemp, F2D* gravity, float STDDEV_ACCL,float M_STDDEV_VEL, F2D* resultMat,F2D *Opos,unsigned int* start,unsigned int *endC,unsigned int *elapsed,unsigned int *elt)
 {
+  int rows, cols, i;
   
     /** Start Timing **/ 
     start = photonStartTiming(); 
@@ -510,7 +511,7 @@ int main(int argc, char* argv[])
     }
 
 
-    symbol_localization(n,eul1,eul2,quat,isEOF,STDDEV_GPSPos,randW,index,fid,sType,gyro,ones,M_STDDEV_GYRO,norm_gyro,angleAlpha,gyroTimeInterval,quatDelta,sData, pos,temp_STDDEV_GPSPos,vel,qConj,orgWorld,STDDEV_GPSVel,STDDEV_ODOVel,accl,M_STDDEV_POS,acclTimeInterval,pi,rows,cols,icount,w,gtemp,gravity,STDDEV_ACCL,M_STDDEV_VEL,resultMat,i,Opos,start,endC,elapsed,elt);
+    symbol_localization(n,eul1,eul2,quat,isEOF,STDDEV_GPSPos,randW,index,fid,sType,gyro,ones,M_STDDEV_GYRO,norm_gyro,angleAlpha,gyroTimeInterval,quatDelta,sData, pos,temp_STDDEV_GPSPos,vel,qConj,orgWorld,STDDEV_GPSVel,STDDEV_ODOVel,accl,M_STDDEV_POS,acclTimeInterval,pi,icount,w,gtemp,gravity,STDDEV_ACCL,M_STDDEV_VEL,resultMat,Opos,start,endC,elapsed,elt);
     //Gol
     printf("Input size\t\t- (%dx%dx%d)\n", rows, cols, n);
 #ifdef CHECK   
@@ -537,7 +538,7 @@ int main(int argc, char* argv[])
     iFreeHandle(isEOF);
     fFreeHandle(fid);
     fFreeHandle(resultMat);
-    fFreeHandle(pos);
+    //fFreeHandle(pos);
     fFreeHandle(vel);
     fFreeHandle(quat);
     fFreeHandle(ones);
