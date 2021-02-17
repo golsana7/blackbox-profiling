@@ -247,16 +247,13 @@ int main(int argc, char* argv[])
      start = photonStartTiming();
      
      symbol_tracking(Ic,blurred_level1,blurred_level2,blurredImage,verticalEdgeImage,horizontalEdgeImage,lambda,WINSZ,endR,endC,lambdaTemp,N_FEA,interestPnt,&features,SUPPRESION_RADIUS,previousFrameBlurred_level1,previousFrameBlurred_level2,verticalEdge_level1,verticalEdge_level2,newpoints,LK_ITER, status,np_temp,numFind,start,end,counter,argv[1],rows,cols,horizontalEdge_level1,horizontalEdge_level2,accuracy,im1);
-  /* Timing utils */
-    end = photonEndTiming();
-    elapsed = photonReportTiming(start, end); 
+ 
     //elt = photonReportTiming(start, end);
     //elapsed[0] += elt[0];
     //elapsed[1] += elt[1];
-    photonPrintTiming(elapsed); 
-    free(start);
+     end = photonEndTiming();
     //free(elt);
-    free(end);
+    //free(end);
     //free(elapsed);
     //}
 
@@ -273,8 +270,12 @@ int main(int argc, char* argv[])
             printf("Error in Tracking Map\n");
     }
 #endif
-    
-   
+  /* Timing utils */
+ 
+    elapsed = photonReportTiming(start, end);    
+    photonPrintTiming(elapsed); 
+    free(start);
+    free(end);
 
     fFreeHandle(blurred_level1);
     fFreeHandle(blurred_level2);
