@@ -6,11 +6,13 @@ Author: Sravanthi Kota Venkata
 #include <stdlib.h>
 #include "localization.h"
 
-void symbol_localization(int n, F2D *eul1,F2D *eul2,F2D* quat,I2D* isEOF,F2D *STDDEV_GPSPos,F2D *randW,I2D* index,F2D* fid,I2D* sType, F2D* gyro, F2D *ones, float M_STDDEV_GYRO,F2D* norm_gyro,F2D* angleAlpha,float gyroTimeInterval, F2D *quatDelta, F2D *sData, F2D *pos,F2D *temp_STDDEV_GPSPos,F2D* vel,F2D *qConj,F2D* orgWorld, float STDDEV_GPSVel, float STDDEV_ODOVel,F2D* accl, float M_STDDEV_POS, float acclTimeInterval, float pi,int rows,int cols,int icount,F2D* w,F2D* gtemp, F2D* gravity, float STDDEV_ACCL,float M_STDDEV_VEL, F2D* resultMat,int i,F2D *Opos)
+void symbol_localization(int n, F2D *eul1,F2D *eul2,F2D* quat,I2D* isEOF,F2D *STDDEV_GPSPos,F2D *randW,I2D* index,F2D* fid,I2D* sType, F2D* gyro,F2D *ones,float M_STDDEV_GYRO,F2D* norm_gyro,F2D* angleAlpha,float gyroTimeInterval, F2D *quatDelta, F2D *sData, F2D *pos,F2D *temp_STDDEV_GPSPos,F2D* vel,F2D *qConj,F2D* orgWorld, float STDDEV_GPSVel, float STDDEV_ODOVel,F2D* accl, float M_STDDEV_POS, float acclTimeInterval, float pi,int rows,int cols,int icount,F2D* w,F2D* gtemp, F2D* gravity, float STDDEV_ACCL,float M_STDDEV_VEL, F2D* resultMat,int i,F2D *Opos,unsigned int* start,unsigned int *endC,unsigned int *elapsed,unsigned int *elt)
 {
-  {
-    //int rows,int cols,i;
-        int i;
+  
+    /** Start Timing **/ 
+    start = photonStartTiming(); 
+ 
+    {
         F2D *eulAngle, *randn;
         eulAngle = fSetArray(n, 3, 0);
         randn = randWrapper(n,1);
@@ -41,10 +43,10 @@ void symbol_localization(int n, F2D *eul1,F2D *eul2,F2D* quat,I2D* isEOF,F2D *ST
     isEOF = iSetArray(1,1,-1);
     
     /** Timing utils **/   
-    //endC = photonEndTiming();
-    //elapsed = photonReportTiming(start, endC);
-    //free(start);
-    //free(endC);
+    endC = photonEndTiming();
+    elapsed = photonReportTiming(start, endC);
+    free(start);
+    free(endC);
 
     rows =0;
     cols = 5;
@@ -67,7 +69,7 @@ void symbol_localization(int n, F2D *eul1,F2D *eul2,F2D* quat,I2D* isEOF,F2D *ST
 
 
         /** Start Timing **/ 
-        //start = photonStartTiming(); 
+        start = photonStartTiming(); 
 
         if( asubsref(sType,0) ==2)
         {
@@ -384,15 +386,16 @@ void symbol_localization(int n, F2D *eul1,F2D *eul2,F2D* quat,I2D* isEOF,F2D *ST
        }
 
     }
-     /** Timing utils **/   
-    //endC = photonEndTiming();
-    //elt = photonReportTiming(start, endC);
-    //elapsed[0] += elt[0];
-    //elapsed[1] += elt[1];
 
-    //free(start);
-    //free(endC);
-    //free(elt);
+    /** Timing utils **/   
+    endC = photonEndTiming();
+    elt = photonReportTiming(start, endC);
+    elapsed[0] += elt[0];
+    elapsed[1] += elt[1];
+
+    free(start);
+    free(endC);
+    free(elt);
 
         // Self check
         {
@@ -506,16 +509,10 @@ int main(int argc, char* argv[])
         fFreeHandle(randn);
     }
 
-    /** Start Timing **/ 
-    //start = photonStartTiming(); 
- 
 
+    symbol_localization(n,eul1,eul2,quat,isEOF,STDDEV_GPSPos,randW,index,fid,sType,gyro,ones,M_STDDEV_GYRO,norm_gyro,angleAlpha,gyroTimeInterval,quatDelta,sData, pos,temp_STDDEV_GPSPos,vel,qConj,orgWorld,STDDEV_GPSVel,STDDEV_ODOVel,accl,M_STDDEV_POS,acclTimeInterval,pi,rows,cols,icount,w,gtemp,gravity,STDDEV_ACCL,M_STDDEV_VEL,resultMat,i,Opos,start,endC,elapsed,elt);
     //Gol
-    symbol_localization(n,eul1,eul2,quat,isEOF,STDDEV_GPSPos,randW,index,fid,sType,gyro,ones,M_STDDEV_GYRO,norm_gyro,angleAlpha,gyroTimeInterval,quatDelta, sData, pos,temp_STDDEV_GPSPos,vel,qConj,orgWorld,STDDEV_GPSVel,STDDEV_ODOVel,accl,M_STDDEV_POS,acclTimeInterval,pi,rows,cols,icount,w,gtemp,gravity,STDDEV_ACCL,M_STDDEV_VEL,resultMat,i,Opos);
-
-    //endC = photonEndTiming();
     printf("Input size\t\t- (%dx%dx%d)\n", rows, cols, n);
-
 #ifdef CHECK   
     
     // Self checking - use expected.txt from data directory
@@ -531,11 +528,8 @@ int main(int argc, char* argv[])
     }
     // Self checking done
 #endif
-    //photonPrintTiming(elapsed);
 
-    //    free(start);
-    //free(endC);
-   
+    // photonPrintTiming(elapsed);
     fFreeHandle(STDDEV_GPSPos);
     //free(elapsed);
     iFreeHandle(index);
