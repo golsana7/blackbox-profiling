@@ -171,9 +171,6 @@ void update_profile(const char* elf_name, char* profile, long int profile_scndx)
 {
 	int fd;
 	Elf *e;
-	//Elf_Scn *scn;
-	//  Elf_Data *data;
-	//GElf_Shdr shdr;
 	size_t profile_size;
 	size_t shstrndx;
 
