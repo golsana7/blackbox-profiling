@@ -76,7 +76,7 @@ void farewell(const char* elf_name, Elf* e, int fd)
 
 }
 
-long int Is_profiled(const char* elf_name)
+long int is_profiled(const char* elf_name)
 {
 	int fd;
 	Elf *e;
@@ -100,12 +100,12 @@ long int Is_profiled(const char* elf_name)
 
 		if (gelf_getshdr(scn,&shdr) != &shdr)
 		{
-			printf("getshdr inside Is_profiled failed!: %s\n",elf_errmsg(-1));
+			printf("getshdr inside is_profiled failed!: %s\n",elf_errmsg(-1));
 		}
 
 		if ((name = elf_strptr (e,shstrndx,shdr.sh_name)) == NULL)
 		{
-			printf("elf_strptr inside Is_Profiled failed!: %s\n",elf_errmsg(-1));
+			printf("elf_strptr inside is_Profiled failed!: %s\n",elf_errmsg(-1));
 		}
 
 		// printf ("Section %-4.4jd%s\n", (uintmax_t)elf_ndxscn(scn),name);
@@ -482,7 +482,7 @@ int main(int argc, char* argv[])
 	/* Set ELF version to the current one (default) */
 	elf_version(EV_CURRENT);
 
-	profile_scndx = Is_profiled(elf_file); 
+	profile_scndx = is_profiled(elf_file); 
 	//check sections to see if there is already .profile section
 	if (profile_scndx != 0)
 		update_profile(elf_file, profile, profile_scndx);
