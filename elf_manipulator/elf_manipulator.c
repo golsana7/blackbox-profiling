@@ -269,7 +269,7 @@ static int setshstrndx (Elf *elf, size_t ndx)
 	return 0;
 }
 
-void add_elf_sections(const char *elf_name, char *profile,  size_t nr /*,int use_mmap, size_t sec_size*/)
+void add_elf_sections(const char *elf_name, char *profile,  size_t nr)
 {
 	printf("adding section to %s\n",elf_name);
 	size_t sec_size;
