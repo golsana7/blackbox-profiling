@@ -22,197 +22,298 @@
 #include <errno.h>
 #include <sys/stat.h>
 
+#define NEW_SECTION_NAME ".profile"
 
-//#include ELFUTILS_HEADER(elf)
+/* This function performs all the ELF manipulation steps in the
+ * required order. */
+void add_profile_section(const char *elf_name, const char *profile);
 
-void* read_file(char* profile, size_t* sec_size)
+/* This function reads the content of the profile file and returns a
+ * buffer with its data content. */
+void* read_profile_file(const char* profile, size_t* sec_size);
+
+/* This function adds a new section name at the end of the existing
+ * section names section. */
+size_t add_section_name(Elf * elf, char * new_section_name);
+
+/* This function computes the offset of the section to be added. It
+ * does so by scanning through the list of section and finding the one
+ * with the largest offset. The size of that section is also added. */
+size_t compute_section_offset(Elf * elf);
+
+/* This function adjusts the offset of the section header table to
+ * account for any addition to the file. */
+void adjust_sec_table_offset(Elf * elf, size_t extra_offset);
+
+/* This function creates a new section and sets it payload to the
+ * content of the profile file. */
+Elf_Scn * add_section_payload(Elf * elf, char * profile_content, size_t profile_length);
+
+/* This function inserts a new entry in the section header table for
+ * the newly created profile section. */
+void update_section_header(Elf_Scn * scn, size_t profile_length, size_t name_offset,
+			   size_t section_offset);
+
+
+int main(int argc, char* argv[])
 {
-	FILE *fr,*fw;
-	void *buf;
-  
+	const char *elf_file;
+	const char* profile_path;
+
+	if (argc < 3) {
+		fprintf(stderr, "Not enough parameters.\n");
+		fprintf(stderr, "Usage: %s <input_elf> <profile>\n", argv[0]);
+		exit(EXIT_FAILURE);
+	}
+	
+	/* Take arguments from command line */
+	elf_file = argv[1]; //original elf we want to augment
+	profile_path = argv[2]; //profile info to be added
+	
+	/* Set ELF version to the current one (default) */
+	elf_version(EV_CURRENT);
+
+	add_profile_section(elf_file, profile_path);
+	
+	return 0;
+}
+
+/* This function reads the content of the profile file and returns a
+ * buffer with its data content. */
+void* read_profile_file(const char* profile, size_t* sec_size)
+{
+	FILE * fr;
+	void * buf;
+	size_t bytes_read;
 	struct stat profile_stats;
-	printf("TEST inside read_file\n");
   
 	//file that we want its info (profile file)
-	if(stat(profile, &profile_stats) == 0)
+	if(stat(profile, &profile_stats) != 0)
 	{
-		//filesize
-		printf("File size is: %ld\n", profile_stats.st_size);
+		fprintf(stderr, "Unable to retrieve profile file size.\n");
+		exit(EXIT_FAILURE);
 	}
-	*sec_size = profile_stats.st_size; //sec_size is an address, so *sec_size is the content
+
+	/* Return file size to callee */
+	*sec_size = profile_stats.st_size;
 
 	buf = malloc (*sec_size);
 
 	if (buf == NULL)
 	{
-		printf ("cannot allocate buffer data of %ld bytes\n", sec_size);
-		exit (-1); // or return NULL
+		fprintf(stderr, "Unable allocate buffer data of %ld bytes\n", *sec_size);
+		exit (EXIT_FAILURE);
 	}
 	//printf("*sec_size is : %ld\n", *sec_size);
 	fr = fopen(profile, "rb");
 	if (!fr)
 	{
-		printf("unable to open %s\n", profile);
+		fprintf(stderr, "Unable to open profile file %s.\n", profile);
+		exit(EXIT_FAILURE);
 	}
-	//fw = fopen("test.bin", "wb");
-	//printf("sec_size is : %zd\n", sec_size);
-	fread(buf, *sec_size, 1, fr);
-	//fwrite(buf, *sec_size,1, fw);
+
+	
+	bytes_read = fread(buf, 1, *sec_size, fr);
+	if (bytes_read != *sec_size) {
+		fprintf(stderr, "Unable to read full profile file. Size: %ld != Bytes read: %ld\n",
+			*sec_size, bytes_read);
+		fclose(fr);
+		exit(EXIT_FAILURE);
+	}
 
 	fclose(fr);
 
 	return buf;
-	//fclose(fw);
-  
 }
 
-
-/* shstrndx is special, might overflow into section zero header sh_link.  */
-static int setshstrndx (Elf *elf, size_t ndx)
+/* This function adds a new section name at the end of the existing
+ * section names section. */
+size_t add_section_name(Elf * elf, char * new_section_name)
 {
-	printf ("setshstrndx: %zd\n", ndx);
+	size_t name_offset;
 
-	GElf_Ehdr ehdr_mem;
-	GElf_Ehdr *ehdr = gelf_getehdr (elf, &ehdr_mem);
-	if (ehdr == NULL)
-	{
-		return -1;
-	}
-	if (ndx < SHN_LORESERVE)
-	{
-		ehdr->e_shstrndx = ndx;
-	}
-	else
-	{
-		ehdr->e_shstrndx = SHN_XINDEX;
-		Elf_Scn *zscn = elf_getscn (elf, 0);
-		GElf_Shdr zshdr_mem;
-		GElf_Shdr *zshdr = gelf_getshdr (zscn, &zshdr_mem);
-		if (zshdr == NULL)
-			return -1;
-		zshdr->sh_link = ndx;
-		if (gelf_update_shdr (zscn, zshdr) == 0)
-			return -1;
-	}
-	if (gelf_update_ehdr (elf, ehdr) == 0)
-		return -1;
-
-	return 0;
-}
-
-void add_elf_sections(const char *elf_name, char *profile,  size_t nr)
-{
-        printf("adding section to %s\n",elf_name);
-	
-	size_t sec_size; // size of the new section whichis gonna be added
-	int fd = open(elf_name, O_RDWR);
-	if (fd < 0)
-	{
-		fprintf(stderr, "Couldn't open ELF file '%s' : %s\n",elf_name, strerror(errno));
-		exit (1);
-	}
-
-	/*begining of modifying ELF file*/
-	Elf *elf = elf_begin(fd,ELF_C_RDWR, NULL);
-	if (elf == NULL)
-	{
-		fprintf(stderr, "Couldn't open ELF file '%s' : %s\n",elf_name, elf_errmsg(-1));
-		exit (1);
-	}
-	
-	/* We will add a new shstrtab section with two new names at the end.
-	   Just get the current shstrtab table and add two entries '.extra'
-	   and '.old_shstrtab' at the end of the table, so all existing indexes
-	   are still valid*/
-	size_t shstrndx; // index of each section name on string table (shstrtab)
+	/* index of each section name on string table (shstrtab) */
+	size_t shstrndx; 
 	if(elf_getshdrstrndx (elf, &shstrndx) < 0)
 	{
-		printf("cannot get shstrtab scn: %s\n",elf_errmsg(-1));
-		exit (-1);
+		fprintf(stderr, "Cannot get shstrtab scn: %s\n",elf_errmsg(-1));
+		exit (EXIT_FAILURE);
 	}
 
-	/*descriptor for a section in section header table*/
-	Elf_Scn *shstrtab_scn = elf_getscn (elf, shstrndx);// get the section which shdrndx says (shstrtab entry) from sec hdr table
+	/* Content of the descriptor for a section in section header table*/
+	Elf_Scn *shstrtab_scn = elf_getscn (elf, shstrndx);
 	if(shstrtab_scn == NULL)
 	{
-		printf("couldn't get shstrtab scn: %s\n", elf_errmsg (-1));
-		exit(1);
+		fprintf(stderr, "Couldn't get shstrtab scn: %s\n", elf_errmsg (-1));
+		exit (EXIT_FAILURE);
 	}
 
 	Elf_Data *shstrtab_data = elf_getdata(shstrtab_scn, NULL); //data of shstrtab entry (which is content of section names string table)
 	if (shstrtab_data == NULL)
 	{
-		printf("couldn't get shstrtab data: %s\n", elf_errmsg (-1));
-		exit (1);
+		fprintf(stderr, "Couldn't get shstrtab data: %s\n", elf_errmsg (-1));
+		exit (EXIT_FAILURE);
 	}
 
-	size_t new_shstrtab_size = (shstrtab_data->d_size + strlen (".profile") + 1
-				    /*+ strlen (".old_shstrtab") + 1*/);
-	void *new_shstrtab_buf = malloc (new_shstrtab_size);// 
+	name_offset = shstrtab_data->d_size;
+	size_t new_shstrtab_size = (shstrtab_data->d_size + strlen(new_section_name) + 1);
+
+	printf("Old section size: 0x%lx, New section size: 0x%lx\n",
+	       shstrtab_data->d_size, new_shstrtab_size);
+	
+	void * new_shstrtab_buf = malloc(new_shstrtab_size);// 
 	if (new_shstrtab_buf == NULL)
 	{
-		printf ("couldn't allocate new shstrtab data d_buf\n");
-		exit (1);
+		printf ("Couldn't allocate new shstrtab data d_buf\n");
+		exit (EXIT_FAILURE);
 	}
-
+	
+	/* Make sure that the buffer is zero-terminated */
 	memcpy (new_shstrtab_buf, shstrtab_data->d_buf, shstrtab_data->d_size);
-	
-	size_t extra_idx = shstrtab_data->d_size; //size of original name table
-	//size_t old_shstrtab_idx = extra_idx + strlen (".extra") + 1;
-	strcpy (new_shstrtab_buf + extra_idx, ".profile");
-	//strcpy (new_shstrtab_buf + old_shstrtab_idx, ".old_shstrtab");
+	strcpy (new_shstrtab_buf + name_offset, new_section_name);
 
-	/* Change the name of the old shstrtab section, because elflint
-	   has a strict check on the name/type for .shstrtab.  */
-	GElf_Shdr shdr_mem;
-	GElf_Shdr *shdr = gelf_getshdr (shstrtab_scn, &shdr_mem);
-	if (shdr == NULL)
-	{
-		printf ("cannot get header for old shstrtab section: %s\n", elf_errmsg (-1));
-		exit (-1);
+	shstrtab_data->d_size = new_shstrtab_size;
+	shstrtab_data->d_buf = new_shstrtab_buf;
+
+	/* Mark this data as dirty to tell libelf to write the modified buffer into the file */
+	elf_flagdata(shstrtab_data, ELF_C_SET, ELF_F_DIRTY);
+	
+	/* Finally update the descriptor of the section names header in the section header table. */
+	GElf_Shdr * shdr = (GElf_Shdr *)malloc(sizeof(GElf_Shdr));
+	gelf_getshdr (shstrtab_scn, shdr);
+	if (shdr == NULL) {
+		fprintf(stderr, "Unable to retrieve section header descriptor.\n");
+		exit(EXIT_FAILURE);
+	}
+	
+	shdr->sh_size = new_shstrtab_size;
+
+	if (gelf_update_shdr(shstrtab_scn, shdr) == 0) {
+		fprintf(stderr, "Unable to update section header.\n");
+		exit(EXIT_FAILURE);
 	}
 
-	size_t shstrtab_idx = shdr->sh_name; //offset of name of this special section (sec name str tab)
-	///shdr->sh_name = old_shstrtab_idx;
+	size_t pos;
+	printf("INFO: Dump of new shstrtab content\n---\n");
+	for (pos = 0; pos < new_shstrtab_size; ++pos) 
+		printf("%c", ((char *)new_shstrtab_buf)[pos]?((char *)new_shstrtab_buf)[pos]:'_');
+	printf("\n---\n");	
+	return name_offset;
+}
 
-	if (gelf_update_shdr (shstrtab_scn, shdr) == 0)
+
+size_t compute_section_offset(Elf * elf)
+{
+	/* Figure out the offset and size of the last section */
+	/* index of each section name on string table (shstrtab) */
+	GElf_Ehdr ehdr;
+	size_t sec_idx, last_sec_off = 0, last_sec_size;
+	
+	if(gelf_getehdr (elf, &ehdr) == NULL)
 	{
-		printf ("cannot update old shstrtab section header: %s\n",elf_errmsg (-1));
-		exit (-1);
+		fprintf(stderr, "Unable to retrieve ELF header: %s\n",elf_errmsg(-1));
+		exit (EXIT_FAILURE);
+	}
+	
+	size_t shdrnum = ehdr.e_shnum;
+
+	/* Loop over all the sections to find the one with the
+	 * greatest offset */
+	for (sec_idx = 0; sec_idx < shdrnum; ++sec_idx) {
+		/* Content of the descriptor for the current section. */
+		Elf_Scn *cur_scn = elf_getscn (elf, sec_idx);
+		if(cur_scn == NULL)
+		{
+			fprintf(stderr, "Couldn't get section %ld: %s\n", sec_idx, elf_errmsg (-1));
+			exit (EXIT_FAILURE);
+		}
+		
+		/* And the descriptor in the section header table */
+		GElf_Shdr * cur_shdr = (GElf_Shdr *)malloc(sizeof(GElf_Shdr));
+		gelf_getshdr (cur_scn, cur_shdr);
+		
+		if (cur_shdr == NULL) {
+			fprintf(stderr, "Unable to retrieve section header descriptor for section %ld.\n",
+				sec_idx);
+			exit(EXIT_FAILURE);
+		}
+
+		if (cur_shdr->sh_offset > last_sec_off) {
+			last_sec_off = cur_shdr->sh_offset;
+			last_sec_size = cur_shdr->sh_size;
+		}
+		
+		
+		free(cur_shdr);
+	}
+	
+	
+	/* Compute the offset of the new section as last_scn offset + last_scn size */
+	size_t profile_offset = last_sec_off + last_sec_size;
+
+	printf("INFO: New section will be placed at offset 0x%lx.\n", profile_offset);
+	
+	return profile_offset;
+
+}
+
+void adjust_sec_table_offset(Elf * elf, size_t extra_offset)
+{
+	GElf_Ehdr ehdr;
+	
+	if (gelf_getehdr (elf, &ehdr) == NULL)
+	{
+		fprintf(stderr, "Unable to retrieve ELF header: %s\n",elf_errmsg(-1));
+		exit (EXIT_FAILURE);
 	}
 
-	
-	void *buf;
-	size_t bufsz;
-	buf  = read_file(profile, &sec_size);
-	// printf ("sec_size is: %ld\n", sec_size);	
-	bufsz = sec_size;
-	
+	ehdr.e_shoff += extra_offset + strlen(NEW_SECTION_NAME) + 1;
 
-	// Add lots of .extra/.profile sections...
+	if (gelf_update_ehdr(elf, &ehdr) == 0)
+	{
+		fprintf(stderr, "Unable to update ELF header: %s\n",elf_errmsg(-1));
+		exit (EXIT_FAILURE);		
+	}
+}
+
+Elf_Scn * add_section_payload(Elf * elf, char * profile_content, size_t profile_length)
+{	
+	/* Add new profile section */
 	Elf_Scn *scn = elf_newscn (elf);
 	if (scn == NULL)
 	{
-		printf ("cannot create .extra section %s\n", elf_errmsg(-1));
-		exit (1);
+		fprintf (stderr, "Unable to create extra section %s\n", elf_errmsg(-1));
+		exit (EXIT_FAILURE);
 	}
+
+	/* Add data to the section */
 	Elf_Data *data = elf_newdata (scn);
 	if (data == NULL)
 	{
-		printf ("couldn't create new section data : %s\n", elf_errmsg(-1));
-		exit (1);
+		fprintf (stderr, "Couldn't create new section data : %s\n", elf_errmsg(-1));
+		exit (EXIT_FAILURE);
 	}
-
-	data->d_size = bufsz;
-	data->d_buf = buf;
+	
+	data->d_size = profile_length;
+	data->d_buf = profile_content;
 	data->d_type = ELF_T_BYTE;
 	data->d_align = 1;
 
-	shdr = gelf_getshdr (scn, &shdr_mem);
-	if (shdr == NULL)
-	{
-		printf ("cannot get header for new section: %s\n", elf_errmsg (-1));
-		exit (1);
+	printf("INFO: Created new section with index %ld and offset %ld\n", elf_ndxscn(scn), data->d_off);
+	
+	return scn;
+
+}
+
+void update_section_header(Elf_Scn * scn, size_t profile_length, size_t name_offset, size_t section_offset)
+{
+	/* Finally update the descriptor of the section names header in the section header table. */
+	GElf_Shdr * shdr = (GElf_Shdr *)malloc(sizeof(GElf_Shdr));
+	gelf_getshdr (scn, shdr);
+
+	if (shdr == NULL) {
+		fprintf(stderr, "Unable to retrieve section header descriptor.\n");
+		exit(EXIT_FAILURE);
 	}
 
 	shdr->sh_type = SHT_PROGBITS;
@@ -222,112 +323,101 @@ void add_elf_sections(const char *elf_name, char *profile,  size_t nr)
 	shdr->sh_info = SHN_UNDEF;
 	shdr->sh_addralign = 1;
 	shdr->sh_entsize = 0;
-	shdr->sh_size = data->d_size;
-	shdr->sh_name = extra_idx;
+	shdr->sh_size = profile_length;
+	shdr->sh_name = name_offset;
+	shdr->sh_offset = section_offset;
+	
+	if (gelf_update_shdr(scn, shdr) == 0) {
+		fprintf(stderr, "Unable to update section header.\n");
+		exit(EXIT_FAILURE);
+	}
+	
+}
 
-	if (gelf_update_shdr (scn, shdr) == 0)
+void add_profile_section(const char *elf_name, const char *profile)
+{
+
+	/* This function operates according to the following logic.
+	 * 1. Attempt to retrieve the full content of the profile file.
+	 * 2. Modify the content of the Section Names Section to add the .profile entry.
+	 * 3. Add new section with profile content into file payload.
+	 * 4. Add new section entry into sectio header table.
+	 * 5. Update number of section in program header. 
+	 */
+
+
+	/* Step 1: Read profile file. */
+	size_t profile_length;
+	char * profile_content = read_profile_file(profile, &profile_length);
+
+	/* Prologue to manipulate the main ELF file. */
+
+	/* Main handler for ELF manipulation */
+	Elf * elf;
+
+	
+	int elf_fd = open(elf_name, O_RDWR);
+	if (elf_fd < 0)
 	{
-		printf ("cannot update new section header: %s\n", elf_errmsg(-1));
-		exit (1);
+		fprintf(stderr, "Couldn't open ELF file '%s' : %s\n",elf_name, strerror(errno));
+		exit (EXIT_FAILURE);
 	}
 
-	// Create new shstrtab section.
-	///	 Elf_Scn *new_shstrtab_scn = elf_newscn (elf);
-	///if (new_shstrtab_scn == NULL)
-	///{
-	///printf ("cannot create new shstrtab section: %s\n", elf_errmsg (-1));
-	///exit (1);
-	///}
-
-	///Elf_Data *new_shstrtab_data = elf_newdata (new_shstrtab_scn);
-	///if (new_shstrtab_data == NULL)
-	///{
-	///printf ("couldn't create new shstrtab section data: %s\n",elf_errmsg(-1));
-	/// exit (1);
-	///}
-
-	/* new_*/shstrtab_data->d_size = new_shstrtab_size;
-	/*new_*/shstrtab_data->d_buf = new_shstrtab_buf;
-	///new_shstrtab_data->d_type = ELF_T_BYTE;
-	///new_shstrtab_data->d_align = 1;
-
-	//bc each time u want to modify it, first u should get it
-	shdr = gelf_getshdr (/*new_*/shstrtab_scn, &shdr_mem);
-	if (shdr == NULL)
+	/*begining of modifying ELF file*/
+	elf = elf_begin(elf_fd, ELF_C_RDWR, NULL);
+	if (elf == NULL)
 	{
-		printf ("cannot get header for new shstrtab section: %s\n", elf_errmsg(-1));
-		exit (1);
+		fprintf(stderr, "Couldn't open ELF file '%s' : %s\n",elf_name, elf_errmsg(-1));
+		exit (EXIT_FAILURE);
 	}
 
-	shdr->sh_type = SHT_STRTAB;
-	shdr->sh_flags = 0;
-	shdr->sh_addr = 0;
-	shdr->sh_link = SHN_UNDEF;
-	shdr->sh_info = SHN_UNDEF;
-	shdr->sh_addralign = 1;
-	shdr->sh_entsize = 0;
-	shdr->sh_size = new_shstrtab_size;
-	shdr->sh_name = shstrtab_idx;
-
-	// Finished new shstrtab section, update the header.
-	if (gelf_update_shdr (/*new_*/shstrtab_scn, shdr) == 0)
+	/* Tell libelf to not change the overall elf layout */
+	if (elf_flagelf(elf, ELF_C_SET, ELF_F_LAYOUT) == 0)
 	{
-		printf ("cannot update new shstrtab section header: %s\n", elf_errmsg(-1));
-		exit (1);     
+		fprintf(stderr, "Unable to flag ELF layput as manually managed: %s\n", elf_errmsg(-1));
+		exit (EXIT_FAILURE);		
 	}
+	
+	/* Step 2: Add .profile entry in Section Names Section. */
+	size_t name_offset = add_section_name(elf, NEW_SECTION_NAME);
 
-	// Set it as the new shstrtab section to get the names correct.
-	///size_t new_shstrndx = elf_ndxscn (new_shstrtab_scn);
-	///if (setshstrndx (elf, new_shstrndx) < 0)
-	///{
-	///  printf ("cannot set shstrndx: %s\n", elf_errmsg (-1));
-	///  exit (1);
-	///}
+	/* Compute the offset in the file where the new section should be placed */
+	size_t section_offset = compute_section_offset(elf);
+	
+	/* Step 3: Add a new section with the content of the profile */
+	Elf_Scn * new_section = add_section_payload(elf, profile_content, profile_length);
 
+	/* Step 4: Update section header with the descriptor of the new section */
+	update_section_header(new_section, profile_length, name_offset, section_offset);
+
+	/* Step 5: Compute the new offset where to relocate the section headers table */
+	adjust_sec_table_offset(elf, profile_length);
+
+	/* Make sure we tell libelf that the section headers table has been updated */
+	if (elf_flagelf(elf, ELF_C_SET, ELF_F_DIRTY) == 0){
+		fprintf(stderr,"Unable to flag ELF as dirty: %s\n", elf_errmsg(-1));
+	}
+	
+	/* Commit changes to the elf. */
 	// Write everything to disk.
 	if (elf_update (elf, ELF_C_WRITE) < 0)
 	{
-		printf ("Failure in elf_update: %s\n", elf_errmsg (-1));
-		exit (1);
+		fprintf (stderr, "Failure in elf_update: %s\n", elf_errmsg (-1));
+		exit (EXIT_FAILURE);
 	}
 
 	if (elf_end (elf) != 0)
 	{
-		printf ("couldn't cleanup elf '%s': %s\n", elf_name, elf_errmsg (-1));
-		exit (1);
+		fprintf (stderr, "Couldn't cleanup elf '%s': %s\n", elf_name, elf_errmsg (-1));
+		exit (EXIT_FAILURE);
 	}
 
-	if (close (fd) != 0)
+	if (close (elf_fd) != 0)
 	{
-	        printf ("couldn't close '%s': %s\n", elf_name, strerror (errno));
-		exit (1);
+	        fprintf (stderr, "Couldn't close '%s': %s\n", elf_name, strerror (errno));
+		exit (EXIT_FAILURE);
 	}
 
-	free (buf);
-	free (new_shstrtab_buf);
-	
+	free (profile_content);	
 }
 
-int main(int argc, char* argv[])
-{
-	int i, fd;
-	const char *elf_file;
-	char* profile;
-
-	
-	elf_file = argv[1]; //original elf we want to augment
-	profile = argv[2]; //profile info to be added
-
-
-	if (!elf_file || !profile) {
-		printf("Invalid ELF path or profile info.");
-		return 0;
-	}
-	
-	/* Set ELF version to the current one (default) */
-	elf_version(EV_CURRENT);
-
-	add_elf_sections(elf_file, profile, 1);
-	
-	return 0;
-}
